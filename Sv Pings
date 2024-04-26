@@ -1,0 +1,119 @@
+pip install -e .
+import KMALL
+import pandas as pd
+kmall_file = "0007_20230414_210138.kmwcd"
+K = KMALL.kmall(kmall_file)
+K.index_file()
+print('~~ File "{}" contains the following datagrams:'.format(kmall_file))
+K.report_packet_types()
+print()
+MWC = K.Index["MessageType"] == "#MWC"
+MWCIndex = K.Index[MWC]
+ping_num = 30
+dg = K.read_index_row(MWCIndex.iloc[ping_num-1])
+import matplotlib.pyplot as plt
+import numpy as np
+print(dg["header"]["dgmType"])
+if dg["header"]["dgmType"]==b"MWC":
+    beamdata = pd.DataFrame.from_dict(dg["beamData"])
+    print("~~ Here is the beamdata from the first #MWC packet", ping_num)
+    print(beamdata.head(20))
+    print("RXInfo:",dg['rxInfo'])
+    print("Partition:",dg['partition'])
+    print("CmnPart:",dg["cmnPart"])
+    print("TXInfo:",dg["txInfo"])
+    print("Sectordata:", dg["sectorData"])
+K.OpenFiletoRead()
+K.FID.seek(MWCIndex["ByteOffset"].iloc[0],0)
+dg = K.read_EMdgmMWC()
+print("MWC records: "+",".join(dg.keys()))
+print("Header: "+"\n\t".join(dg["header"].keys()))
+print("rxInfo: "+"\n\t".join(dg["rxInfo"].keys()))
+print("beamData: "+"\n\t".join(dg["beamData"].keys()))
+print("phaseInfo: "+"\n\t".join(dg["phaseInfo"].keys()))
+print("txInfo: "+"\n\t".join(dg["txInfo"].keys()))
+print("sector data: "+"\n\t".join(dg["sectorData"].keys()))
+print("phase info: "+"\n\t".join(dg["phaseInfo"].keys()))
+print("cmnpart: "+"\n\t".join(dg["cmnPart"].keys()))
+print("partition: "+"\n\t".join(dg["partition"].keys()))
+rxInfo = dg["rxInfo"]
+txInfo = dg["txInfo"]
+beamData = dg["beamData"]
+sampleFreq_Hz = rxInfo["sampleFreq_Hz"]
+header = dg["header"]
+beamData = dg["beamData"]
+SoundSpeed = dg["rxInfo"]["soundVelocity_mPerSec"]
+centreFreq_Hz = dg["sectorData"]["centreFreq_Hz"]
+print("CentreFreq_Hz")
+print(centreFreq_Hz)
+sampleFrequency = dg["rxInfo"]["sampleFreq_Hz"]
+Amplitude = dg["beamData"]["sampleAmplitude05dB_p"]
+Angle = np.array(dg["beamData"]["beamPointAngReVertical_deg"])
+TVGFuncApplied = dg["rxInfo"]["TVGfunctionApplied"]
+TVGOffset = dg["rxInfo"]["TVGoffset_dB"]
+beamPointAngReVertical_deg = dg["beamData"]["beamPointAngReVertical_deg"]
+numSampleData = dg["beamData"]["numSampleData"]
+RxBeamWidth = 1
+TxBeamWidth = dg["sectorData"]["txBeamWidthAlong_deg"] 
+from itertools import islice, repeat, chain
+zeros = repeat(0)
+n = max(map(len, Amplitude))
+padded_amplitude = [list(islice(chain(row, zeros), n)) for row in Amplitude]
+amp_np = np.array(padded_amplitude)
+AWC = np.multiply(amp_np,0.5)
+X = TVGFuncApplied
+C = TVGOffset
+RTVal = 10*np.log10((np.pi/180)*(TxBeamWidth[0]*np.pi/180))
+length = np.arange(1, len(amp_np[0])).tolist()
+length2 = np.arange (1, len(amp_np)).tolist()
+ran1 = [x * 0.5 * SoundSpeed / sampleFrequency for x in length]
+ran1_np = np.array(ran1)
+ran1.insert(0, 10e-9)
+range1 = np.tile(ran1, ((amp_np).shape[0],1))
+range2 = pd.DataFrame(range1).T
+TS = (AWC + RTVal * np.ones(AWC.shape)) - (float(X)* np.log10(np.ones((len(range1),1))*range1))+(40*np.log10(np.ones((len(AWC),1))*range1))-float(C)
+receiveAngle = 1/np.cos(np.array(Angle)*np.pi/180)
+RxRad = RxBeamWidth*np.pi/180
+length = 2 * range2*np.sin(RxRad/2)
+TxRad = TxBeamWidth[0]*np.pi/180*receiveAngle
+width = ((2*np.ones([range2.shape[0], len(TxRad)])*range2)*np.sin(TxRad/2)).T
+beamArea = length * width.T
+Tau = 3500/1e5
+Sv = np.zeros(TS.size)
+Vol_log = 10*np.log(beamArea*Tau*SoundSpeed/2)
+print("Sound speed")
+print(SoundSpeed)
+Sv = TS-Vol_log.T
+Svplt = Sv.drop(1)
+Svplt1=Svplt.drop(columns=0)
+z = (np.cos(Angle*np.pi/180)*range1.T)
+y = (np.sin(Angle*np.pi/180)*range1.T)
+import matplotlib.pyplot as plt
+beamAngle = pd.DataFrame.from_dict(beamPointAngReVertical_deg)
+y_line = y[:,90]
+z_line = z[:,90]
+Sv_line = Sv.loc[90,:]
+print("Sv mean")
+mean_Sv = statistics.mean(Sv_line)
+print(mean_Sv)
+plt.figure()
+plt.pcolor(y.T, -z.T, Svplt1, vmax=-4)
+
+line = plt.plot(y_line,-z_line, color='blue')[0]
+
+plt.ylim(-6, 0)
+standard_dev = np.std(y_line)
+print("standard deviation")
+print(standard_dev)
+plt.plot(mean_Sv,'ro') 
+plt.colorbar()
+plt.xlabel("Cross Track Distance")
+plt.ylabel("Pool Depth")
+plt.show()
+
+plt.plot(Sv_line,z_line)
+plt.xlabel("Sv")
+plt.ylabel("Pool Depth")
+plt.show()
+
+
